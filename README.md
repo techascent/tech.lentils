@@ -1,5 +1,7 @@
 # tech.lentils
 
+[![Clojars Project](https://img.shields.io/clojars/v/techascent/tech.lentils.svg)](https://clojars.org/techascent/tech.lentils)
+
 Binding the Intel DAAL library into the techascent ecosystem.
 
 ## Usage
