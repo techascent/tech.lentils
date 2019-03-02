@@ -32,11 +32,11 @@
 
 (def option-map
   {:max-nodes {:setter #(.setMaxTreeDepth ^Parameter %1 (long %2))
-               :gs (gs/linear-long [1e1 1e3])}
+               :gs (gs/linear-long [0 1e3])}
    :shrinkage {:setter #(.setShrinkage ^Parameter %1 (double %2))
                :gs (gs/linear [1e-2 0.99])}
    :sampling-fraction {:setter #(.setObservationsPerTreeFraction ^Parameter %1 (double %2))
-                       :gs (gs/linear [1e-2 0.99])}
+                       :gs (gs/linear [1e-2 1])}
    :max-iterations {:setter #(.setMaxIterations ^Parameter %1 (long %2))
                     :gs (gs/linear-long [1e1 1e3])}
    :split-method {:setter #(.setSplitMethod ^Parameter %1 (keyword->split-method %2))

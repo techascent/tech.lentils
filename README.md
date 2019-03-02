@@ -4,7 +4,14 @@ Binding the Intel DAAL library into the techascent ecosystem.
 
 ## Usage
 
-When we figure that out, we will let you know.
+
+### Regression
+
+```clojure
+{:model-type :daal.regression/linear}
+{:model-type :daal.regression/ridge}
+{:model-type :daal.regression/gradient-boosted-trees}
+```
 
 ## License
 
