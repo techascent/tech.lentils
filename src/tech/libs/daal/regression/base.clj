@@ -2,15 +2,20 @@
   (:require [tech.ml.protocols.system :as ml-system]
             [tech.ml.registry :as registry]
             [tech.ml.dataset :as ds]
+            [tech.ml.dataset.column :as ds-col]
             [tech.ml.dataset.options :as ds-opts]
             [tech.ml.model :as ml-model]
             [tech.datatype :as dtype]
             ;;Ensure protocols are loaded
             [tech.libs.daal.numeric-table :as numeric-table]
             [clojure.core.matrix :as m]
-            [tech.libs.daal.context :as daal-ctx])
-  (:import [com.intel.daal.data_management.data HomogenNumericTable]
-           [com.intel.daal.services DaalContext]))
+            [tech.libs.daal.context :as daal-ctx]
+            [tech.compute.tensor :as ct])
+  (:import [com.intel.daal.data_management.data
+            HomogenNumericTable NumericTable SerializableBase]
+           [com.intel.daal.services DaalContext]
+           [com.intel.daal.algorithms Model]
+           [com.intel.daal.data_management.data DataFeatureUtils$FeatureType]))
 
 
 (set! *warn-on-reflection* true)
@@ -18,7 +23,7 @@
 
 
 (defn create-homogeneous-table
-  ^HomogenNumericTable [table-data n-rows n-columns ^DaalContext daal-context]
+  ^HomogenNumericTable [table-data n-rows n-columns metadata-list ^DaalContext daal-context]
   (let [n-rows (long n-rows)
         n-cols (long n-columns)]
     (when-not (= (* n-rows n-cols)
@@ -26,26 +31,47 @@
       (throw (ex-info "Table data ecount mismatch"
                       {:expected-ecount (* n-rows n-cols)
                        :actual-ecount (dtype/ecount table-data)})))
-    (case (dtype/get-datatype table-data)
-      :float64 (HomogenNumericTable. daal-context ^doubles table-data n-cols n-rows)
-      :float32 (HomogenNumericTable. daal-context ^floats table-data n-cols n-rows))))
+    (let [^HomogenNumericTable retval
+          (case (dtype/get-datatype table-data)
+            :float64 (HomogenNumericTable. daal-context ^doubles table-data n-cols n-rows)
+            :float32 (HomogenNumericTable. daal-context ^floats table-data n-cols n-rows))
+          table-dict (.getDictionary retval)]
+      ;;It is important for certain algorithms for the input data to be marked as
+      ;;categorical
+      (doseq [[categorical-idx] (->> metadata-list
+                                     (map-indexed vector)
+                                     (filter #(contains? (second %) :categorical?))
+                                     (map first))]
+        (.setFeature table-dict (.getNumericType retval) (int categorical-idx)
+                     DataFeatureUtils$FeatureType/DAAL_CATEGORICAL))
+      retval)))
+
+
+(defn dataset->metadata-map
+  [dataset]
+  (->> (ds/columns dataset)
+       (map (fn [col]
+              [(ds-col/column-name col)
+               (ds-col/metadata col)]))
+       (into {})))
 
 
 (defn create-tables
-  [row-major-data n-rows row-key-seq daal-context]
-  (let [first-item (first row-major-data)]
+  [dataset feature-row-map row-key-seq datatype daal-context]
+  (let [metadata-map (dataset->metadata-map dataset)
+        row-major-data (ds/->row-major dataset feature-row-map {:datatype datatype})
+        first-item (first row-major-data)
+        [n-cols n-rows] (m/shape dataset)]
     (->> row-key-seq
          (mapv (fn [row-key]
                  (let [first-row-data (get first-item row-key)
                        item-ecount (dtype/ecount first-row-data)
-                       datatype (dtype/get-datatype first-row-data)]
-                   (println {:n-rows n-rows
-                             :item-ecount item-ecount})
+                       metadata-seq (mapv #(get metadata-map %) (get feature-row-map row-key))]
                    (-> (dtype/copy-raw->item! (map row-key row-major-data)
                                               (dtype/make-array-of-type datatype (* (long n-rows) item-ecount))
                                               0)
                        first
-                       (create-homogeneous-table n-rows item-ecount daal-context))))))))
+                       (create-homogeneous-table n-rows item-ecount metadata-seq daal-context))))))))
 
 
 (defonce sub-systems (atom {}))
@@ -74,6 +100,30 @@
       get-regression-system))
 
 
+(defn pack-model
+  [^SerializableBase model ^NumericTable model-beta]
+  (.pack model)
+  (merge
+   {:model-bytes (ml-model/model->byte-array model)}
+   (when model-beta
+     {:explanatory-variables (dtype/->array-copy model-beta)})))
+
+
+(defn unpack-model
+  [^DaalContext daal-context {:keys [model-bytes]}]
+  (let [^SerializableBase retval (ml-model/byte-array->model model-bytes)]
+    (.unpack retval daal-context)
+    retval))
+
+(defn unpack-prediction
+  [^NumericTable pred]
+  (let [[n-rows n-cols] (m/shape pred)
+        table-data (dtype/->array-copy pred)]
+    (if (= 1 n-cols)
+      table-data
+      (ct/in-place-reshape table-data (ct/shape pred)))))
+
+
 (defrecord DaalSystem []
   ml-system/PMLSystem
   (system-name [system] :daal.regression)
@@ -87,11 +137,11 @@
             [n-cols n-rows] (m/shape dataset)
             n-rows (long n-rows)
             [feature-table label-table]
-            (-> (ds/->row-major dataset
-                                {:features (ds-opts/feature-column-names options)
-                                 :labels (ds-opts/label-column-names options)}
-                                {:datatype datatype})
-                (create-tables n-rows [:features :labels] daal-context))
+            (create-tables dataset {:features (ds-opts/feature-column-names options)
+                                    :labels (ds-opts/label-column-names options)}
+                           [:features :labels]
+                           datatype
+                           daal-context)
             train-fn (-> (options->regression-system options)
                          :train-fn)]
         (train-fn daal-context options feature-table label-table))))
@@ -102,11 +152,10 @@
             [n-cols n-rows] (m/shape dataset)
             n-rows (long n-rows)
             [feature-table]
-            (-> (ds/->row-major dataset
-                                {:features (ds-opts/feature-column-names options)
-                                 :labels (ds-opts/label-column-names options)}
-                                {:datatype datatype})
-                (create-tables n-rows [:features :labels] daal-context))
+            (create-tables dataset {:features (ds-opts/feature-column-names options)}
+                           [:features]
+                           datatype
+                           daal-context)
             predict-fn (-> (options->regression-system options)
                            :predict-fn)]
         (predict-fn daal-context options model feature-table)))))
