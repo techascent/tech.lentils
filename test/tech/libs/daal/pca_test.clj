@@ -20,8 +20,8 @@
     (println "TENS-INPUT" src-tens)
 
     (is (= #{:means :variances :eigenvectors :eigenvalues} (set (keys pca-info))))
-    (println (dtype/->vector (:variances pca-info)))
-    (println (:eigenvectors pca-info))
+    (println "DAAL Variances:" (dtype/->vector (:variances pca-info)))
+    (println "DAAL Eigenvectors:" (:eigenvectors pca-info))
 
     (println "SMILE!!!")
     (let [array-of-arrays (->> (range 5)
@@ -33,5 +33,5 @@
           eigenvectors (-> (.getLoadings smile-pca)
                            (.data)
                            (ct/in-place-reshape [5 5]))]
-      (println (dtype/->vector (.getVariance smile-pca)))
-      (println eigenvectors))))
+      (println "Smile Variances" (dtype/->vector (.getVariance smile-pca)))
+      (println "Smile Eigenvectors " eigenvectors))))
