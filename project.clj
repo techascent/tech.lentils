@@ -1,4 +1,4 @@
-(defproject techascent/tech.lentils "0.02-SNAPSHOT"
+(defproject techascent/tech.lentils "0.02"
   :description "Bindings of the intel daal library into the techascent ecosystem."
   :url "http://github.com/techascent/tech.lentils"
   :license {:name "Eclipse Public License"
