@@ -38,10 +38,10 @@
           table-dict (.getDictionary retval)]
       ;;It is important for certain algorithms for the input data to be marked as
       ;;categorical
-      (doseq [[categorical-idx] (->> metadata-list
-                                     (map-indexed vector)
-                                     (filter #(contains? (second %) :categorical?))
-                                     (map first))]
+      (doseq [categorical-idx (->> metadata-list
+                                   (map-indexed vector)
+                                   (filter #(contains? (second %) :categorical?))
+                                   (map first))]
         (.setFeature table-dict (.getNumericType retval) (int categorical-idx)
                      DataFeatureUtils$FeatureType/DAAL_CATEGORICAL))
       retval)))
