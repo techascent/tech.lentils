@@ -22,31 +22,6 @@
 (set! *unchecked-math* :warn-on-boxed)
 
 
-(defn create-homogeneous-table
-  ^HomogenNumericTable [table-data n-rows n-columns metadata-list ^DaalContext daal-context]
-  (let [n-rows (long n-rows)
-        n-cols (long n-columns)]
-    (when-not (= (* n-rows n-cols)
-                 (dtype/ecount table-data))
-      (throw (ex-info "Table data ecount mismatch"
-                      {:expected-ecount (* n-rows n-cols)
-                       :actual-ecount (dtype/ecount table-data)})))
-    (let [^HomogenNumericTable retval
-          (case (dtype/get-datatype table-data)
-            :float64 (HomogenNumericTable. daal-context ^doubles table-data n-cols n-rows)
-            :float32 (HomogenNumericTable. daal-context ^floats table-data n-cols n-rows))
-          table-dict (.getDictionary retval)]
-      ;;It is important for certain algorithms for the input data to be marked as
-      ;;categorical
-      (doseq [categorical-idx (->> metadata-list
-                                   (map-indexed vector)
-                                   (filter #(contains? (second %) :categorical?))
-                                   (map first))]
-        (.setFeature table-dict (.getNumericType retval) (int categorical-idx)
-                     DataFeatureUtils$FeatureType/DAAL_CATEGORICAL))
-      retval)))
-
-
 (defn dataset->metadata-map
   [dataset]
   (->> (ds/columns dataset)
@@ -71,7 +46,7 @@
                                               (dtype/make-array-of-type datatype (* (long n-rows) item-ecount))
                                               0)
                        first
-                       (create-homogeneous-table n-rows item-ecount metadata-seq daal-context))))))))
+                       (numeric-table/create-homogeneous-table n-rows item-ecount metadata-seq daal-context))))))))
 
 
 (defonce sub-systems (atom {}))

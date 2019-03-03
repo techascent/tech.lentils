@@ -14,8 +14,18 @@
     (resource/track retval #(.dispose retval) #{:stack})))
 
 
+(defonce ^:dynamic *bound-context* nil)
+
+(defn context
+  []
+  (if-let [retval *bound-context*]
+    retval
+    (throw (ex-info "There is no daal context currently bound" {}))))
+
+
 (defmacro with-daal-context
   [& body]
   `(resource/stack-resource-context
-    (let [~'daal-context (create-daal-context)]
-      ~@body)))
+    (let [~'daal-context (or *bound-context* (create-daal-context))]
+      (with-bindings {#'*bound-context* ~'daal-context}
+        ~@body))))
